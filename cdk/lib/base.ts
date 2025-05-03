@@ -7,17 +7,17 @@ import { Construct } from 'constructs';
 import { InstanceSize } from 'aws-cdk-lib/aws-ec2/lib/instance-types';
 
 export interface BaseConfig extends cdk.StackProps {
-    instanceSize: InstanceSize;
-    ec2KeyName: string;
-    volumeSizeGiB: number;
-    niceDCVDisplayDriverUrl: string;
-    niceDCVServerUrl: string;
-    sevenZipUrl: string,
-    chromeUrl: string,
-    gridSwCertUrl: string,
-    openPorts: number[];
-    allowInboundCidr: string;
-    associateElasticIp: boolean;
+  instanceSize: InstanceSize;
+  ec2KeyName: string;
+  volumeSizeGiB: number;
+  niceDCVDisplayDriverUrl: string;
+  niceDCVServerUrl: string;
+  sevenZipUrl: string,
+  chromeUrl: string,
+  gridSwCertUrl: string,
+  openPorts: number[];
+  allowInboundCidr: string;
+  associateElasticIp: boolean;
 
 }
 
@@ -41,8 +41,8 @@ export abstract class BaseEc2Stack extends cdk.Stack {
 
     const securityGroup = new ec2.SecurityGroup(this, 'SecurityGroup', {
       vpc,
-      description: 'NICE DCV access',
-      securityGroupName: 'InboundAccessFromDcv',
+      description: 'Moonlight/Sunshine Security Group',
+      securityGroupName: 'MoonlightSunshineInboundAccess',
     });
 
     // eslint-disable-next-line no-restricted-syntax
@@ -63,14 +63,40 @@ export abstract class BaseEc2Stack extends cdk.Stack {
 
     const launchTemplate = new ec2.CfnLaunchTemplate(this, 'GamingLaunchTemplate', {
       launchTemplateData: {
+
         keyName: props.ec2KeyName,
         instanceType: this.getInstanceType().toString(),
+        instanceInitiatedShutdownBehavior: 'terminate',
         networkInterfaces: [{
           subnetId: vpc.selectSubnets({ subnetType: ec2.SubnetType.PUBLIC }).subnetIds[0],
           deviceIndex: 0,
           description: 'ENI',
           groups: [securityGroup.securityGroupId],
         }],
+        instanceMarketOptions: {
+          marketType: 'spot',
+          spotOptions: {
+            maxPrice: '0.7',
+          },
+        },
+        tagSpecifications: [
+          {
+            resourceType: 'instance',
+            tags: [
+              { key: 'Name', value: `GamingInstance/${this.getInstanceType().toString()}` },
+              { key: 'Id', value: `GamingInstance/${this.getInstanceType().toString()}` },
+              { key: 'SnapAndDelete', value: 'true' },
+            ],
+          },
+          {
+            resourceType: 'volume',
+            tags: [
+              { key: 'Name', value: `GamingInstance/${this.getInstanceType().toString()}` },
+              { key: 'Id', value: `GamingInstance/${this.getInstanceType().toString()}` },
+              { key: 'SnapAndDelete', value: 'true' },
+            ],
+          },
+        ],
       },
       launchTemplateName: `GamingInstanceLaunchTemplate/${this.getInstanceType().toString()}`,
     });
@@ -87,12 +113,14 @@ export abstract class BaseEc2Stack extends cdk.Stack {
           deviceName: '/dev/sda1',
           volume: ec2.BlockDeviceVolume.ebs(props.volumeSizeGiB, {
             volumeType: ec2.EbsDeviceVolumeType.GP3,
+            deleteOnTermination: false,
+            encrypted: true,
           }),
         },
       ],
       role: s3Read,
       init: ec2.CloudFormationInit.fromConfigSets({
-        configSets: { 
+        configSets: {
           // Seperate configSets and specific order depending on EC2 Instance Type
           NVIDIA: ['helpersPreinstall', 'nvidia', 'nvidiadcv', 'reboot'],
           AMD: ['helpersPreinstall', 'amd', 'amddcv', 'reboot'],
@@ -109,7 +137,7 @@ export abstract class BaseEc2Stack extends cdk.Stack {
             ec2.InitPackage.msi(this.props.niceDCVServerUrl, { key: '3-Install-NICEDCV-Server' }),
             ec2.InitPackage.msi(this.props.niceDCVDisplayDriverUrl, { key: '4-Install-NICEDCV-Display' }),
             ec2.InitCommand.shellCommand('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\nvlddmkm\\Global" /v vGamingMarketplace /t REG_DWORD /d 2', { key: '9-Add-Reg', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
-            ec2.InitCommand.shellCommand('reg add "HKEY_USERS\\S-1-5-18\\Software\\GSettings\\com\\nicesoftware\\dcv\\log\\level" /v log-level /t REG_SZ /d debug /f', { key: '91-Add-Reg', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),            
+            ec2.InitCommand.shellCommand('reg add "HKEY_USERS\\S-1-5-18\\Software\\GSettings\\com\\nicesoftware\\dcv\\log\\level" /v log-level /t REG_SZ /d debug /f', { key: '91-Add-Reg', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
             ec2.InitCommand.shellCommand('reg add "HKEY_USERS\\S-1-5-18\\Software\\GSettings\\com\\nicesoftware\\dcv\\display" /v target-fps /t REG_DWORD /d 0 /f', { key: '92-Add-Reg', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
             ec2.InitCommand.shellCommand('reg add "HKEY_USERS\\S-1-5-18\\Software\\GSettings\\com\\nicesoftware\\dcv\\display" /v enable-qu /t REG_DWORD /d 0 /f', { key: '93-Add-Reg', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
             ec2.InitCommand.shellCommand('reg add "HKEY_USERS\\S-1-5-18\\Software\\GSettings\\com\\nicesoftware\\dcv\\display" /v frame-queue-weights /t REG_DWORD /d 851 /f', { key: '94-Add-Reg', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
@@ -140,7 +168,7 @@ export abstract class BaseEc2Stack extends cdk.Stack {
             ec2.InitCommand.shellCommand('Powershell.exe -Command "C:\\Windows\\System32\\DriverStore\\FileRepository\\nvg*\\nvidia-smi.exe -e 0"', { key: '9-Disable-ECC-Checking', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
             ec2.InitCommand.shellCommand('Powershell.exe -Command "C:\\Windows\\System32\\DriverStore\\FileRepository\\nvg*\\nvidia-smi.exe -ac 6250,1710"', { key: '910-Clock-Speed', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
             //ec2.InitCommand.shellCommand('Powershell.exe -Command "C:\\Windows\\System32\\DriverStore\\FileRepository\\nvg*\\nvidia-smi.exe -ac 5001,1590"', { key: '910-Clock-Speed', waitAfterCompletion: ec2.InitCommandWaitDuration.of(cdk.Duration.seconds(0)) }),
-            
+
           ]),
           amd: new ec2.InitConfig([
             // Command to download and install latest AMD drivers.
@@ -174,24 +202,24 @@ export abstract class BaseEc2Stack extends cdk.Stack {
     ec2Instance.instance.overrideLogicalId('EC2Instance');
 
     if (this.props.associateElasticIp) {
-      const elasticIp = new ec2.CfnEIP(this, 'Gaming', {
-        instanceId: ec2Instance.instanceId,
-      });
+      // const elasticIp = new ec2.CfnEIP(this, 'Gaming', {
+      //   instanceId: ec2Instance.instanceId,
+      // });
 
-      new cdk.CfnOutput(this, 'Public IP', { value: elasticIp.ref });
+      // new cdk.CfnOutput(this, 'Public IP', { value: elasticIp.ref });
     } else {
-      new cdk.CfnOutput(this, 'Public IP', { value: ec2Instance.instancePublicIp });
+      // new cdk.CfnOutput(this, 'Public IP', { value: ec2Instance.instancePublicIp });
     }
 
-    new cdk.CfnOutput(this, 'Credentials', { value: `https://${this.region}.console.aws.amazon.com/ec2/v2/home?region=${this.region}#GetWindowsPassword:instanceId=${ec2Instance.instanceId};previousPlace=ConnectToInstance` });
-    new cdk.CfnOutput(this, 'InstanceId', { value: ec2Instance.instanceId });
+    // new cdk.CfnOutput(this, 'Credentials', { value: `https://${this.region}.console.aws.amazon.com/ec2/v2/home?region=${this.region}#GetWindowsPassword:instanceId=${ec2Instance.instanceId};previousPlace=ConnectToInstance` });
+    // new cdk.CfnOutput(this, 'InstanceId', { value: ec2Instance.instanceId });
     new cdk.CfnOutput(this, 'KeyName', { value: props.ec2KeyName });
     new cdk.CfnOutput(this, 'LaunchTemplateId', { value: launchTemplate.launchTemplateName! });
   }
 
-    protected abstract getInstanceType(): ec2.InstanceType;
+  protected abstract getInstanceType(): ec2.InstanceType;
 
-    protected abstract getMachineImage(): ec2.IMachineImage;
+  protected abstract getMachineImage(): ec2.IMachineImage;
 
-    protected abstract getGpuType(): string;
+  protected abstract getGpuType(): string;
 }
