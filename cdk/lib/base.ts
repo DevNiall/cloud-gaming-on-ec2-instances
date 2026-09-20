@@ -77,6 +77,8 @@ export abstract class BaseEc2Stack extends cdk.Stack {
           marketType: 'spot',
           spotOptions: {
             maxPrice: '0.7',
+            instanceInterruptionBehavior: 'stop',
+            spotInstanceType: 'persistent',
           },
         },
         tagSpecifications: [

@@ -4,6 +4,7 @@ import 'source-map-support/register';
 import { G4DNStack } from '../lib/g4dn';
 import { G4ADStack } from '../lib/g4ad';
 import { G5Stack } from '../lib/g5';
+import { AmiLifecycleStack } from '../lib/ami-lifecycle-stack';
 
 const app = new cdk.App();
 
@@ -81,5 +82,16 @@ new G4ADStack(app, 'CloudGamingsOnG4AD', {
   },
   tags: {
     project: 'CloudGamingsOnG4AD',
+  },
+});
+
+// AMI Lifecycle Stack - handles automated AMI creation when instances are stopped
+new AmiLifecycleStack(app, 'AmiLifecycleStack', {
+  env: {
+    account: ACCOUNT_ID,
+    region: REGION,
+  },
+  tags: {
+    project: 'CloudGamingAmiLifecycle',
   },
 });
